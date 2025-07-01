@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Chosen Palette: Warm Neutrals with Blue Accent -->
+    <!-- Application Structure Plan: The application is designed around a clear, task-oriented user flow. It's structured into three main horizontal sections within a central container: 1) Sound Configuration: At the top, this section allows users to select their source audio, either from a local file or a predefined library. This is the first logical step for the user. 2) Interactive Grid: The core of the app, this 4x4 grid of pads is the primary interaction point for both sound assignment and playback, providing immediate tactile and auditory feedback. 3) Controls & Persistence: At the bottom, this section groups all global actions like recording, playback control, and saving/loading presets. This separation of concerns creates an intuitive workflow where setup, performance, and management are in distinct, predictable locations. -->
+    <!-- Visualization & Content Choices: 
+        - Report Info: Pad sound assignment. Goal: Inform/Organize. Viz/Presentation: Interactive grid of buttons (pads). Interaction: User selects a sound source, then clicks a pad to create the assignment. Pad label updates dynamically. Justification: This provides direct manipulation and clear visual feedback, which is the most intuitive interface for this task. Library/Method: HTML/JS/Tailwind.
+        - Report Info: Sound playback. Goal: Inform/Engage. Viz/Presentation: Visual feedback on pads. Interaction: On click or keypress, the pad glows, and the sound plays. Justification: Synchronized audio-visual feedback reinforces the user's action and makes the experience more engaging. Library/Method: CSS/JS + Tone.js.
+        - Report Info: Recording state. Goal: Inform. Viz/Presentation: Record button changes style (pulses). Interaction: Click to toggle state. Justification: A pulsing red button is a universally understood symbol for active recording, preventing user error. Library/Method: CSS Animation/JS.
+        - Report Info: Presets and Sequences. Goal: Organize/Allow Persistence. Viz/Presentation: Clearly labeled buttons for Save, Load, and Export. Interaction: Simple clicks trigger localStorage or file download operations. Justification: Standard, unambiguous UI patterns for common data operations. Library/Method: JS Web APIs (localStorage, Blob).
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Soundboard Builder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .btn-record.recording {
+            animation: pulse-red 1.2s infinite alternate;
+        }
+        @keyframes pulse-red {
+            from {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+            to {
+                box-shadow: 0 0 0 7px rgba(239, 68, 68, 0);
+            }
+        }
+        .pad.active-playback {
+            transform: scale(1.05);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.6);
+        }
+    </style>
+</head>
+<body class="bg-stone-100 flex items-center justify-center min-h-screen p-4">
+    <div class="container bg-white w-full max-w-4xl mx-auto rounded-2xl shadow-lg p-6 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-stone-800">🎛️ Custom Soundboard Builder</h1>
+            <p class="text-stone-500 mt-2">Create your own sound palette. Assign sounds, record sequences, and play.</p>
+        </header>
+
+        <main>
+            <section id="sound-config" class="mb-8 p-6 bg-stone-50 rounded-xl border border-stone-200">
+                <h2 class="text-xl font-bold text-stone-700 mb-2">1. Sound Configuration</h2>
+                <p class="text-stone-600 mb-4">Start by selecting a sound from our library or uploading your own. After selection, click any pad in the grid below to assign it.</p>
+                <div class="flex flex-col sm:flex-row items-center flex-wrap gap-4">
+                    <label class="px-4 py-2 bg-blue-500 text-white rounded-lg shadow cursor-pointer hover:bg-blue-600 transition-colors">
+                        <span>📤 Upload Sound</span>
+                        <input type="file" id="audioFileInput" class="hidden" accept="audio/*">
+                    </label>
+                    <span class="text-stone-500">or select from library:</span>
+                    <div id="library-buttons" class="flex items-center flex-wrap gap-2">
+                        <button class="px-4 py-2 bg-stone-200 text-stone-700 rounded-lg hover:bg-stone-300 transition-colors" data-sound-type="synth" data-sound-name="Synth Beep">Synth Beep</button>
+                        <button class="px-4 py-2 bg-stone-200 text-stone-700 rounded-lg hover:bg-stone-300 transition-colors" data-sound-type="kick" data-sound-name="Kick">Kick</button>
+                        <button class="px-4 py-2 bg-stone-200 text-stone-700 rounded-lg hover:bg-stone-300 transition-colors" data-sound-type="snare" data-sound-name="Snare">Snare</button>
+                        <button class="px-4 py-2 bg-stone-200 text-stone-700 rounded-lg hover:bg-stone-300 transition-colors" data-sound-type="hihat" data-sound-name="Hi-Hat">Hi-Hat</button>
+                    </div>
+                </div>
+                <div id="messageBox" class="mt-4 text-center text-sm font-medium p-3 rounded-lg hidden"></div>
+            </section>
+
+            <section id="sound-grid" class="mb-8">
+                 <h2 class="text-xl font-bold text-stone-700 mb-2">2. Interactive Pad Grid</h2>
+                 <p class="text-stone-600 mb-4">This is your performance area. Click a pad or use your keyboard (keys shown on pads) to play the assigned sounds.</p>
+                <div id="soundboardGrid" class="grid grid-cols-4 gap-3 md:gap-4">
+                </div>
+            </section>
+
+            <section id="controls" class="p-6 bg-stone-50 rounded-xl border border-stone-200">
+                <h2 class="text-xl font-bold text-stone-700 mb-2">3. Controls &amp; Persistence</h2>
+                <p class="text-stone-600 mb-4">Use these controls to record and play back sequences of sounds. You can also save your entire pad layout to your browser for later use.</p>
+                <div class="flex items-center justify-center flex-wrap gap-3">
+                    <button id="recordBtn" class="px-4 py-2 bg-red-500 text-white rounded-lg shadow hover:bg-red-600 transition-colors flex items-center gap-2">🔴 Record</button>
+                    <button id="stopBtn" class="px-4 py-2 bg-stone-500 text-white rounded-lg shadow hover:bg-stone-600 transition-colors flex items-center gap-2">⏹️ Stop</button>
+                    <button id="playSequenceBtn" class="px-4 py-2 bg-green-500 text-white rounded-lg shadow hover:bg-green-600 transition-colors flex items-center gap-2">▶️ Play Sequence</button>
+                    <button id="savePresetBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 transition-colors flex items-center gap-2">💾 Save Preset</button>
+                    <button id="loadPresetBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 transition-colors flex items-center gap-2">📂 Load Preset</button>
+                    <button id="exportSequenceBtn" class="px-4 py-2 bg-amber-500 text-white rounded-lg shadow hover:bg-amber-600 transition-colors flex items-center gap-2">📤 Export Sequence</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.documentElement.addEventListener('mousedown', async () => {
+            if (Tone.context.state !== 'running') {
+                await Tone.start();
+            }
+        });
+
+        let soundMap = {};
+        let recordedSequence = [];
+        let isRecording = false;
+        let recordingStartTime = 0;
+        let currentSoundToAssign = null;
+        let messageTimeout;
+
+        const soundboardGrid = document.getElementById('soundboardGrid');
+        const audioFileInput = document.getElementById('audioFileInput');
+        const recordBtn = document.getElementById('recordBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const playSequenceBtn = document.getElementById('playSequenceBtn');
+        const savePresetBtn = document.getElementById('savePresetBtn');
+        const loadPresetBtn = document.getElementById('loadPresetBtn');
+        const exportSequenceBtn = document.getElementById('exportSequenceBtn');
+        const librarySoundButtons = document.querySelectorAll('#library-buttons button');
+        const messageBox = document.getElementById('messageBox');
+
+        const keyMap = {
+            'q': 'pad-0', 'w': 'pad-1', 'e': 'pad-2', 'r': 'pad-3',
+            'a': 'pad-4', 's': 'pad-5', 'd': 'pad-6', 'f': 'pad-7',
+            'z': 'pad-8', 'x': 'pad-9', 'c': 'pad-10', 'v': 'pad-11',
+            't': 'pad-12', 'y': 'pad-13', 'u': 'pad-14', 'i': 'pad-15'
+        };
+        const padKeys = Object.keys(keyMap);
+        const padIds = Object.values(keyMap);
+
+        function showMessage(message, type = 'info') {
+            messageBox.textContent = message;
+            messageBox.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800', 'bg-blue-100', 'text-blue-800');
+            clearTimeout(messageTimeout);
+
+            if (type === 'success') {
+                messageBox.classList.add('bg-green-100', 'text-green-800');
+            } else if (type === 'error') {
+                messageBox.classList.add('bg-red-100', 'text-red-800');
+            } else {
+                messageBox.classList.add('bg-blue-100', 'text-blue-800');
+            }
+            messageTimeout = setTimeout(() => {
+                messageBox.classList.add('hidden');
+            }, 3000);
+        }
+
+        async function createSoundInstance(type, data = null) {
+            try {
+                if (type === 'uploaded' && data) {
+                    const buffer = new Tone.Buffer(data);
+                    return new Tone.Player(buffer).toDestination();
+                } else if (type === 'synth') {
+                    return new Tone.FMSynth().toDestination();
+                } else if (type === 'kick') {
+                    return new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 10, envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.4 } }).toDestination();
+                } else if (type === 'snare') {
+                     const noise = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.005, decay: 0.1, sustain: 0 } }).toDestination();
+                     const tone = new Tone.MembraneSynth({ pitchDecay: 0.01, octaves: 5, envelope: { attack: 0.001, decay: 0.05, sustain: 0 } }).toDestination();
+                     return { noise, tone };
+                } else if (type === 'hihat') {
+                    return new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.001, decay: 0.05, sustain: 0 } }).toDestination();
+                }
+            } catch (error) {
+                showMessage(`Error loading sound: ${error.message}`, 'error');
+                return null;
+            }
+        }
+
+        function playSound(padId) {
+            const sound = soundMap[padId];
+            if (!sound || !sound.instance) return;
+
+            const padElement = document.getElementById(padId);
+            if (padElement) {
+                padElement.classList.add('active-playback');
+                setTimeout(() => padElement.classList.remove('active-playback'), 200);
+            }
+
+            try {
+                if (sound.type === 'uploaded') sound.instance.start();
+                else if (sound.type === 'synth') sound.instance.triggerAttackRelease('C4', '8n');
+                else if (sound.type === 'kick') sound.instance.triggerAttackRelease('C1', '8n');
+                else if (sound.type === 'snare') {
+                    sound.instance.noise.triggerAttack();
+                    sound.instance.tone.triggerAttackRelease('G4', '16n');
+                }
+                else if (sound.type === 'hihat') sound.instance.triggerAttackRelease('32n');
+
+            } catch (error) {
+                showMessage(`Error playing sound: ${sound.name}`, 'error');
+            }
+
+            if (isRecording) {
+                recordedSequence.push({ time: Tone.now() - recordingStartTime, padId: padId });
+            }
+        }
+
+        function renderSoundboard() {
+            soundboardGrid.innerHTML = '';
+            padIds.forEach((padId, index) => {
+                const padElement = document.createElement('div');
+                padElement.id = padId;
+                padElement.className = 'pad aspect-square flex flex-col justify-center items-center bg-stone-200 rounded-lg cursor-pointer transition-all duration-100 hover:bg-stone-300 relative shadow';
+                padElement.dataset.key = padKeys[index];
+
+                const padName = document.createElement('div');
+                padName.className = 'pad-name text-stone-700 text-sm md:text-base font-semibold text-center break-words px-2';
+                padName.textContent = soundMap[padId]?.name || '';
+
+                const padKeyDisplay = document.createElement('div');
+                padKeyDisplay.className = 'pad-key text-stone-500 text-xs absolute bottom-2 right-2 font-mono';
+                padKeyDisplay.textContent = padKeys[index].toUpperCase();
+
+                padElement.append(padName, padKeyDisplay);
+
+                padElement.addEventListener('click', async () => {
+                    if (currentSoundToAssign) {
+                        await assignSoundToPad(padId, { ...currentSoundToAssign });
+                        currentSoundToAssign = null;
+                        showMessage(`'${soundMap[padId].name}' assigned to key ${padKeys[index].toUpperCase()}`, 'success');
+                    } else {
+                        playSound(padId);
+                    }
+                });
+                soundboardGrid.appendChild(padElement);
+            });
+        }
+
+        async function assignSoundToPad(padId, { type, data, name }) {
+            if (soundMap[padId]?.instance) {
+                 if (Array.isArray(soundMap[padId].instance)) {
+                    soundMap[padId].instance.forEach(inst => inst.dispose());
+                 } else if (soundMap[padId].instance.dispose) {
+                    soundMap[padId].instance.dispose();
+                 }
+            }
+            const instance = await createSoundInstance(type, data);
+            if (instance) {
+                soundMap[padId] = { type, data, name, instance };
+                const padNameEl = document.getElementById(padId)?.querySelector('.pad-name');
+                if(padNameEl) padNameEl.textContent = name;
+            } else {
+                 showMessage(`Failed to assign sound "${name}"`, 'error');
+            }
+        }
+
+        audioFileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file || !file.type.startsWith('audio/')) {
+                showMessage('Please upload a valid audio file.', 'error');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                currentSoundToAssign = {
+                    type: 'uploaded',
+                    data: e.target.result,
+                    name: file.name.split('.').slice(0, -1).join('.')
+                };
+                showMessage(`"${currentSoundToAssign.name}" ready. Click a pad to assign.`, 'info');
+            };
+            reader.readAsDataURL(file);
+        });
+
+        librarySoundButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                currentSoundToAssign = {
+                    type: button.dataset.soundType,
+                    data: null,
+                    name: button.dataset.soundName
+                };
+                showMessage(`"${currentSoundToAssign.name}" ready. Click a pad to assign.`, 'info');
+            });
+        });
+
+        document.addEventListener('keydown', (event) => {
+            const key = event.key.toLowerCase();
+            if (keyMap[key]) {
+                event.preventDefault();
+                playSound(keyMap[key]);
+            }
+        });
+
+        recordBtn.addEventListener('click', () => {
+            if (isRecording) return;
+            isRecording = true;
+            recordingStartTime = Tone.now();
+            recordedSequence = [];
+            recordBtn.classList.add('recording');
+            showMessage('Recording started...', 'info');
+        });
+
+        stopBtn.addEventListener('click', () => {
+            if (!isRecording) return;
+            isRecording = false;
+            recordBtn.classList.remove('recording');
+            showMessage(`Recording stopped. ${recordedSequence.length} events recorded.`, 'success');
+        });
+
+        playSequenceBtn.addEventListener('click', () => {
+            if (isRecording || recordedSequence.length === 0) {
+                 showMessage(isRecording ? 'Stop recording first.' : 'No sequence recorded.', 'error');
+                 return;
+            }
+            showMessage('Playing sequence...', 'info');
+            Tone.Transport.stop();
+            Tone.Transport.cancel();
+            recordedSequence.forEach(event => {
+                Tone.Transport.scheduleOnce(time => playSound(event.padId), event.time);
+            });
+            Tone.Transport.start();
+        });
+
+        savePresetBtn.addEventListener('click', () => {
+            try {
+                const serializableSoundMap = Object.entries(soundMap).reduce((acc, [padId, sound]) => {
+                    acc[padId] = { type: sound.type, data: sound.data, name: sound.name };
+                    return acc;
+                }, {});
+                localStorage.setItem('soundboardPreset', JSON.stringify(serializableSoundMap));
+                localStorage.setItem('recordedSequence', JSON.stringify(recordedSequence));
+                showMessage('Preset saved!', 'success');
+            } catch (error) {
+                showMessage('Failed to save preset. Storage may be full.', 'error');
+            }
+        });
+
+        loadPresetBtn.addEventListener('click', async () => {
+            const savedSoundMap = localStorage.getItem('soundboardPreset');
+            const savedSequence = localStorage.getItem('recordedSequence');
+            if (!savedSoundMap) {
+                showMessage('No saved preset found.', 'error');
+                return;
+            }
+            showMessage('Loading preset...', 'info');
+            const parsedSoundMap = JSON.parse(savedSoundMap);
+            for (const padId in soundMap) {
+                if(soundMap[padId]?.instance?.dispose) soundMap[padId].instance.dispose();
+            }
+            soundMap = {};
+            for (const padId in parsedSoundMap) {
+                await assignSoundToPad(padId, parsedSoundMap[padId]);
+            }
+            recordedSequence = savedSequence ? JSON.parse(savedSequence) : [];
+            renderSoundboard();
+            showMessage('Preset loaded successfully!', 'success');
+        });
+        
+        exportSequenceBtn.addEventListener('click', () => {
+            if (recordedSequence.length === 0) {
+                showMessage('No sequence to export.', 'error');
+                return;
+            }
+            const blob = new Blob([JSON.stringify(recordedSequence, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'soundboard_sequence.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            a.remove();
+            showMessage('Sequence exported.', 'success');
+        });
+
+        renderSoundboard();
+    </script>
+</body>
+</html>
